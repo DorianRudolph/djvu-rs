@@ -109,6 +109,7 @@ mod jbm;
 mod layout;
 mod num;
 mod refine;
+mod structure;
 
 use blit::*;
 use dict::*;
@@ -118,6 +119,8 @@ use jbm::*;
 use layout::*;
 use num::*;
 use refine::*;
+
+pub use structure::{Jb2Blit, Jb2Shape, Jb2Structure, decode_structure};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -129,6 +132,9 @@ use refine::*;
 /// via a "required-dict-or-reset" (type 9) record.
 pub struct Jb2Dict {
     symbols: Vec<Jbm>,
+    /// For each symbol, the index of the symbol it was refined from (record type 5),
+    /// or `None` for symbols coded directly (type 2).
+    parents: Vec<Option<u32>>,
 }
 
 /// Decode a JB2 image stream (Sjbz chunk data) into a [`Bitmap`].

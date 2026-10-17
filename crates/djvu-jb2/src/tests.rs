@@ -320,6 +320,7 @@ fn decode_rejects_shared_dict_shorter_than_declared() {
     );
     let short_dict = Jb2Dict {
         symbols: full_dict.symbols[..full_dict.symbols.len() - 1].to_vec(),
+        parents: full_dict.parents[..full_dict.parents.len() - 1].to_vec(),
     };
     assert!(matches!(
         decode(&sjbz_data, Some(&short_dict)),
@@ -454,4 +455,99 @@ fn decode_downsampled_matches_full_then_downsample_shift3() {
     assert_eq!(expected.width, actual.width);
     assert_eq!(expected.height, actual.height);
     assert_eq!(expected.data, actual.data, "downsampled mask mismatch");
+}
+
+// ── decode_structure: shapes + blits reproduce decode() exactly ──────────
+
+fn check_structure(sjbz: &[u8], dict: Option<&Jb2Dict>) -> Jb2Structure {
+    let st = decode_structure(sjbz, dict).unwrap();
+    let expected = decode(sjbz, dict).unwrap();
+    assert_eq!(
+        st.render(dict),
+        expected,
+        "composited blits differ from decode()"
+    );
+    let n = st.inherited + st.shapes.len();
+    for (i, s) in st.shapes.iter().enumerate() {
+        if let Some(p) = s.parent {
+            assert!(p < st.inherited + i, "parent must precede its child");
+        }
+        let b = &s.bitmap;
+        assert!(b.width > 0 && b.height > 0, "shapes are never empty");
+        let row_has = |y| (0..b.width).any(|x| b.get(x, y));
+        let col_has = |x| (0..b.height).any(|y| b.get(x, y));
+        assert!(
+            row_has(0) && row_has(b.height - 1) && col_has(0) && col_has(b.width - 1),
+            "shapes are tight"
+        );
+    }
+    assert!(
+        st.blits.iter().all(|b| b.shape < n),
+        "blits reference existing shapes"
+    );
+    st
+}
+
+#[test]
+fn decode_structure_matches_decode_without_dict() {
+    // boy_jb2 is a bare page (FORM:DJVU); carte is a bundled one-page document (FORM:DJVM)
+    for (name, bundled) in [("boy_jb2.djvu", false), ("carte.djvu", true)] {
+        let djvu = std::fs::read(assets_path().join(name)).unwrap();
+        let sjbz = if bundled {
+            extract_first_page_sjbz(&djvu)
+        } else {
+            extract_sjbz(&djvu)
+        };
+        let st = check_structure(&sjbz, None);
+        assert!(!st.blits.is_empty(), "{name}: no blits");
+    }
+}
+
+#[test]
+fn decode_structure_matches_decode_with_shared_dict() {
+    let djvu = std::fs::read(assets_path().join("DjVu3Spec_bundled.djvu")).unwrap();
+    let dict = decode_dict(&find_djvi_djbz_data(&djvu), None).unwrap();
+    let file = djvu_iff::parse(&djvu).unwrap();
+    let pages = file
+        .root
+        .children()
+        .iter()
+        .filter(
+            |c| matches!(c, djvu_iff::Chunk::Form { secondary_id, .. } if secondary_id == b"DJVU"),
+        )
+        .count();
+    let (mut checked, mut inherited_blits, mut refined) = (0, 0, 0);
+    for page in 0..pages {
+        let sjbz = find_page_form_data(&djvu, page);
+        // pages that include a different dictionary are not decodable with this one
+        if decode(&sjbz, Some(&dict)).is_err() {
+            continue;
+        }
+        let st = check_structure(&sjbz, Some(&dict));
+        inherited_blits += st.blits.iter().filter(|b| b.shape < st.inherited).count();
+        refined += st.shapes.iter().filter(|s| s.parent.is_some()).count();
+        checked += 1;
+    }
+    assert!(checked >= 5, "only {checked} pages checked");
+    assert!(
+        inherited_blits > 0,
+        "expected blits of shared-dictionary shapes"
+    );
+    let _ = refined;
+}
+
+#[test]
+fn dict_shapes_report_refinement_parents() {
+    let djvu = std::fs::read(assets_path().join("DjVu3Spec_bundled.djvu")).unwrap();
+    let dict = decode_dict(&find_djvi_djbz_data(&djvu), None).unwrap();
+    assert!(!dict.is_empty());
+    let mut with_parent = 0;
+    for i in 0..dict.len() {
+        let s = dict.shape(i);
+        if let Some(p) = s.parent {
+            assert!(p < i);
+            with_parent += 1;
+        }
+    }
+    assert!(with_parent > 0, "a real dictionary contains refinements");
 }

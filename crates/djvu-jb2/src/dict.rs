@@ -122,6 +122,10 @@ pub(super) fn decode_dictionary_with_pool(
         &[]
     };
     let mut dict = JbmDict::new(initial_inh);
+    let mut parents: Vec<Option<u32>> = match inherited {
+        Some(inh) if initial_dict_length > 0 => inh.parents[..initial_dict_length].to_vec(),
+        _ => Vec::new(),
+    };
 
     // Dict streams only accept types 2, 5, 9, 10, 11
     let max_sym_px = MAX_TOTAL_SYMBOL_PIXELS;
@@ -151,6 +155,7 @@ pub(super) fn decode_dictionary_with_pool(
                 check_symbol_decode_budget(&zp, w, h, 1, &mut total_sym_pixels, max_sym_px)?;
                 let bm = decode_bitmap_direct(&mut zp, &mut direct_bitmap_ctx, w, h, pool)?;
                 dict.push(bm.crop_and_recycle(pool));
+                parents.push(None);
             }
 
             // 5 — matched refinement → add to dict
@@ -185,6 +190,7 @@ pub(super) fn decode_dictionary_with_pool(
                     pool,
                 )?;
                 dict.push(cbm.crop_and_recycle(pool));
+                parents.push(Some(index as u32));
             }
 
             // 9 — required-dict-or-reset (ignored in dict streams)
@@ -211,5 +217,6 @@ pub(super) fn decode_dictionary_with_pool(
 
     Ok(Jb2Dict {
         symbols: dict.into_symbols(),
+        parents,
     })
 }
