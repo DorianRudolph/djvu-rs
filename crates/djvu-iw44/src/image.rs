@@ -108,8 +108,8 @@ impl Iw44Image {
         self.cb.as_ref().map(|p| (p.width, p.height))
     }
 
-    /// Returns `true` if the image is a color (YCbCr) image.
-    #[cfg(test)]
+    /// Returns `true` if the image is a color (YCbCr) image; `false` for grayscale
+    /// (as known after the first chunk).
     pub fn is_color(&self) -> bool {
         self.is_color
     }

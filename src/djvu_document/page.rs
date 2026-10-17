@@ -172,6 +172,16 @@ impl SharedDict {
     }
 }
 
+/// A page's FGbz foreground palette.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ForegroundPalette {
+    /// Palette colours (RGB).
+    pub colors: Vec<[u8; 3]>,
+    /// Colour index of every JB2 blit, in blit order; empty when the chunk has no
+    /// index table.
+    pub indices: Vec<i16>,
+}
+
 pub struct DjVuPage {
     /// Page info parsed from the INFO chunk.
     pub(super) info: PageInfo,
@@ -577,6 +587,21 @@ impl DjVuPage {
     pub fn shared_jb2_dict(&self) -> Option<(&[u8], &Jb2Dict)> {
         let shared = self.shared_djbz.as_ref()?;
         Some((&shared.raw, shared.get()?))
+    }
+
+    /// The FGbz foreground palette.
+    ///
+    /// Returns `Ok(None)` if the page has no FGbz chunk.
+    pub fn foreground_palette(&self) -> Result<Option<ForegroundPalette>, DocError> {
+        let Some(data) = self.find_chunk(b"FGbz") else {
+            return Ok(None);
+        };
+        let palette = crate::fgbz::parse_fgbz(data)?;
+        let colors = palette.colors.iter().map(|c| [c.r, c.g, c.b]).collect();
+        Ok(Some(ForegroundPalette {
+            colors,
+            indices: palette.indices,
+        }))
     }
 
     /// Return all FG44 foreground chunk data slices, in order.
