@@ -567,6 +567,18 @@ impl DjVuPage {
         None
     }
 
+    /// The shared JB2 dictionary this page INCLs: its raw `Djbz` bytes and the decoded
+    /// dictionary (`None` if the page has none or it fails to decode).
+    ///
+    /// Pages that INCL the same DJVI component return the same byte slice, so
+    /// `core::ptr::eq` on it groups pages by dictionary — e.g. to emit one PDF
+    /// `/JBIG2Globals` stream per DjVu dictionary.
+    #[cfg(feature = "std")]
+    pub fn shared_jb2_dict(&self) -> Option<(&[u8], &Jb2Dict)> {
+        let shared = self.shared_djbz.as_ref()?;
+        Some((&shared.raw, shared.get()?))
+    }
+
     /// Return all FG44 foreground chunk data slices, in order.
     pub fn fg44_chunks(&self) -> Vec<&[u8]> {
         self.find_chunks(b"FG44")
